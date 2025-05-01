@@ -1,1 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Racing Game with Speed Boost</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #2c3e50;
+            font-family: Arial, sans-serif;
+            flex-direction: column;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #fff;
+            background-color: #34495e;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            color: white;
+            text-align: center;
+        }
+        
+        .speed-meter {
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .audio-controls {
+            margin-top: 10px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div class="speed-meter">
+        Speed: <span id="speedText">Normal (1x)</span>
+    </div>
+    <div class="controls">
+        <p>Controls: Arrow keys to move | SPACE to toggle speed boost</p>
+    </div>
+    <div class="audio-controls">
+        <label>
+            <input type="checkbox" id="muteMusic" checked> Music
+        </label>
+        <label>
+            <input type="checkbox" id="muteSFX" checked> Sound Effects
+        </label>
+    </div>
+    
+    <!-- Audio elements -->
+    <audio id="backgroundMusic" loop>
+        <source src="https://cdnjs.cloudflare.com/ajax/libs/ion-sound/3.0.7/sounds/computer_ambience.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="speedUpSound">
+        <source src="https://cdnjs.cloudflare.com/ajax/libs/ion-sound/3.0.7/sounds/button_click.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="collisionSound">
+        <source src="https://cdnjs.cloudflare.com/ajax/libs/ion-sound/3.0.7/sounds/metal_plate.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="checkpointSound">
+        <source src="https://cdnjs.cloudflare.com/ajax/libs/ion-sound/3.0.7/sounds/bell_ring.mp3" type="audio/mpeg">
+    </audio>
 
+    <script>
+        // Game variables
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const speedText = document.getElementById('speedText');
+        
+        // Audio elements
+        const backgroundMusic = document.getElementById('backgroundMusic');
+        const speedUpSound = document.getElementById('speedUpSound');
+        const collisionSound = document.getElementById('collisionSound');
+        const checkpointSound = document.getElementById('checkpointSound');
+        const muteMusic = document.getElementById('muteMusic');
+        const muteSFX = document.getElementById('muteSFX');
+        
+        // Car properties
+        const car = {
+            x: 400,
+            y: 500,
+            width: 40,
+            height: 70,
+            speed: 5,
+            speedMultiplier: 1,
+            maxSpeedMultiplier: 3,
+            turning: 5,
+            color: '#e74c3c'
+        };
+        
+        // Track boundaries
+        const trackBoundaries = {
+            innerX: 150,
+            innerY: 100,
+            innerWidth: 500,
+            innerHeight: 400,
+            outerX: 100,
+            outerY: 50,
+            outerWidth: 600,
+            outerHeight: 500
+        };
+        
+        // Game controls
+        const controls = {
+            up: false,
+            down: false,
+            left: false,
+            right: false
+        };
+        
+        // Checkpoint for scoring
+        const checkpoint = {
+            x: 400,
+            y: 50,
+            width: 100,
+            height: 10,
+            passed: false
+        };
+        
+        let score = 0;
+        let gameOver = false;
+        
+        // Event listeners for keyboard controls
+        window.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'ArrowUp':
+                    controls.up = true;
+                    break;
+                case 'ArrowDown':
+                    controls.down = true;
+                    break;
+                case 'ArrowLeft':
+                    controls.left = true;
+                    break;
+                case 'ArrowRight':
+                    controls.right = true;
+                    break;
+                case ' ':
+                    toggleSpeed();
+                    break;
+            }
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            switch(e.key) {
+                case 'ArrowUp':
+                    controls.up = false;
+                    break;
+                case 'ArrowDown':
+                    controls.down = false;
+                    break;
+                case 'ArrowLeft':
+                    controls.left = false;
+                    break;
+                case 'ArrowRight':
+                    controls.right = false;
+                    break;
+            }
+        });
+        
+        // Toggle speed levels (1x, 2x, 3x)
+        function toggleSpeed() {
+            car.speedMultiplier = (car.speedMultiplier % car.maxSpeedMultiplier) + 1;
+            updateSpeedText();
+            
+            // Play speed change sound
+            if (!muteSFX.checked) {
+                speedUpSound.currentTime = 0;
+                speedUpSound.play();
+            }
+        }
+        
+        function updateSpeedText() {
+            const speedLabels = ['Normal (1x)', 'Fast (2x)', 'Max (3x)'];
+            speedText.textContent = speedLabels[car.speedMultiplier - 1];
+            
+            // Visual feedback for speed
+            if (car.speedMultiplier === 1) {
+                speedText.style.color = 'white';
+            } else if (car.speedMultiplier === 2) {
+                speedText.style.color = 'yellow';
+            } else {
+                speedText.style.color = 'red';
+            }
+        }
+        
+        // Check collision with track boundaries
+        function checkCollision() {
+            // Check if car is outside outer boundaries
+            if (car.x < trackBoundaries.outerX || 
+                car.x + car.width > trackBoundaries.outerX + trackBoundaries.outerWidth ||
+                car.y < trackBoundaries.outerY || 
+                car.y + car.height > trackBoundaries.outerY + trackBoundaries.outerHeight) {
+                return true;
+            }
+            
+            // Check if car is inside inner boundaries
+            if (car.x + car.width > trackBoundaries.innerX && 
+                car.x < trackBoundaries.innerX + trackBoundaries.innerWidth &&
+                car.y + car.height > trackBoundaries.innerY && 
+                car.y < trackBoundaries.innerY + trackBoundaries.innerHeight) {
+                return true;
+            }
+            
+            return false;
+        }
+        
+        // Check if car passes the checkpoint
+        function checkCheckpoint() {
+            if (!checkpoint.passed && 
+                car.x < checkpoint.x + checkpoint.width &&
+                car.x + car.width > checkpoint.x &&
+                car.y < checkpoint.y + checkpoint.height &&
+                car.y + car.height > checkpoint.y) {
+                checkpoint.passed = true;
+                score++;
+                
+                // Play checkpoint sound
+                if (!muteSFX.checked) {
+                    checkpointSound.currentTime = 0;
+                    checkpointSound.play();
+                }
+            }
+            
+            // Reset checkpoint state when car goes below it
+            if (checkpoint.passed && car.y > checkpoint.y + 100) {
+                checkpoint.passed = false;
+            }
+        }
+        
+        // Update game state
+        function update() {
+            if (gameOver) return;
+            
+            // Handle car movement with speed multiplier
+            const actualSpeed = car.speed * car.speedMultiplier;
+            
+            if (controls.up) {
+                car.y -= actualSpeed;
+            }
+            
+            if (controls.down) {
+                car.y += actualSpeed / 2; // Slower reversing
+            }
+            
+            if (controls.left) {
+                car.x -= car.turning;
+            }
+            
+            if (controls.right) {
+                car.x += car.turning;
+            }
+            
+            // Check for collisions
+            if (checkCollision()) {
+                gameOver = true;
+                
+                // Play collision sound
+                if (!muteSFX.checked) {
+                    collisionSound.currentTime = 0;
+                    collisionSound.play();
+                }
+                
+                // Stop background music
+                backgroundMusic.pause();
+            }
+            
+            // Check checkpoint
+            checkCheckpoint();
+        }
+        
+        // Draw game elements
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw track
+            ctx.fillStyle = '#7f8c8d'; // Track color
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw outer track area
+            ctx.fillStyle = '#27ae60'; // Grass color
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw track path (the driveable area)
+            ctx.fillStyle = '#7f8c8d';
+            ctx.fillRect(trackBoundaries.outerX, trackBoundaries.outerY, 
+                        trackBoundaries.outerWidth, trackBoundaries.outerHeight);
+            
+            // Draw inner obstacle
+            ctx.fillStyle = '#27ae60';
+            ctx.fillRect(trackBoundaries.innerX, trackBoundaries.innerY, 
+                        trackBoundaries.innerWidth, trackBoundaries.innerHeight);
+            
+            // Draw checkpoint
+            ctx.fillStyle = checkpoint.passed ? '#2ecc71' : '#f1c40f';
+            ctx.fillRect(checkpoint.x, checkpoint.y, checkpoint.width, checkpoint.height);
+            
+            // Draw car with color based on speed
+            if (car.speedMultiplier === 1) {
+                ctx.fillStyle = '#e74c3c'; // Red
+            } else if (car.speedMultiplier === 2) {
+                ctx.fillStyle = '#f39c12'; // Orange
+            } else {
+                ctx.fillStyle = '#c0392b'; // Dark red
+            }
+            
+            ctx.fillRect(car.x, car.y, car.width, car.height);
+            
+            // Add car details
+            ctx.fillStyle = '#2c3e50';
+            // Car windows
+            ctx.fillRect(car.x + 5, car.y + 5, car.width - 10, 15);
+            ctx.fillRect(car.x + 5, car.y + 35, car.width - 10, 15);
+            
+            // Display score
+            ctx.fillStyle = 'white';
+            ctx.font = '24px Arial';
+            ctx.fillText(`Score: ${score}`, 20, 30);
+            
+            // Display speed flames at high speeds
+            if (car.speedMultiplier > 1) {
+                drawSpeedFlames();
+            }
+            
+            // Game over message
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                ctx.fillStyle = 'white';
+                ctx.font = '48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2);
+                
+                ctx.font = '24px Arial';
+                ctx.fillText(`Final Score: ${score}`, canvas.width / 2, canvas.height / 2 + 50);
+                ctx.fillText('Press F5 to restart', canvas.width / 2, canvas.height / 2 + 100);
+                ctx.textAlign = 'left';
+            }
+        }
+        
+        // Draw flames behind car at high speeds
+        function drawSpeedFlames() {
+            ctx.fillStyle = car.speedMultiplier === 2 ? '#f39c12' : '#e74c3c';
+            
+            // Random flame effect
+            const flameHeight = car.speedMultiplier * 10;
+            const flameWidth = car.width * 0.6;
+            
+            ctx.beginPath();
+            ctx.moveTo(car.x + car.width / 2 - flameWidth / 2, car.y + car.height);
+            ctx.lineTo(car.x + car.width / 2, car.y + car.height + flameHeight + Math.random() * 10);
+            ctx.lineTo(car.x + car.width / 2 + flameWidth / 2, car.y + car.height);
+            ctx.fill();
+        }
+        
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Audio controls event listeners
+        muteMusic.addEventListener('change', function() {
+            if (this.checked) {
+                backgroundMusic.play();
+            } else {
+                backgroundMusic.pause();
+            }
+        });
+        
+        muteSFX.addEventListener('change', function() {
+            // No action needed here, sounds are checked before playing
+        });
+        
+        // Initialize and start game
+        updateSpeedText();
+        
+        // Start background music if not muted
+        if (muteMusic.checked) {
+            backgroundMusic.volume = 0.5; // Set volume to 50%
+            backgroundMusic.play().catch(e => {
+                console.log("Audio couldn't autoplay. User interaction needed.");
+            });
+        }
+        
+        // Handle user interaction for audio (needed for autoplay policies)
+        document.addEventListener('click', function() {
+            if (muteMusic.checked && backgroundMusic.paused) {
+                backgroundMusic.play().catch(e => console.log("Audio play failed."));
+            }
+        }, { once: true });
+        
+        gameLoop();
+    </script>
+</body>
+</html>
